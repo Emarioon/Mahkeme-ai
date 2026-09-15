@@ -23,7 +23,6 @@ PROMPTS = {
 
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
-# Sol menüden API Key alıyoruz
 api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
 st.sidebar.caption("API anahtarını aistudio.google.com adresinden ücretsiz alabilirsin.")
 
@@ -32,9 +31,8 @@ def ai_karakter_yanitla(rol_adi, olay_metni, client, ekstra_baglam=""):
     full_prompt = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
     
     try:
-        # Doğru ve Güncel SDK Çağrısı
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=full_prompt
         )
         return response.text.strip()
@@ -70,4 +68,3 @@ if st.button("⚖️ Mahkemeyi Başlat", type="primary", use_container_width=Tru
             st.success(hikari_res)
         except Exception as err:
             st.error(f"Başlatma Hatası: {err}")
-            

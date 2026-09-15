@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import urllib.parse
 
 st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
@@ -24,20 +23,24 @@ PROMPTS = {
 
 def ai_karakter_yanitla(rol_adi, olay_metni, ekstra_baglam=""):
     system_prompt = PROMPTS[rol_adi]
-    full_text = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
+    full_prompt = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
     
-    encoded_prompt = urllib.parse.quote(full_text)
-    # model=mistral parametresi eklenerek OpenAI bütçe kısıtlaması kesin olarak baypas edilir
-    url = f"https://text.pollinations.ai/{encoded_prompt}?model=mistral"
+    url = "https://text.pollinations.ai/"
+    payload = {
+        "messages": [
+            {"role": "user", "content": full_prompt}
+        ],
+        "model": "openai-large"
+    }
     
     try:
-        response = requests.get(url, timeout=30)
+        response = requests.post(url, json=payload, timeout=30)
         if response.status_code == 200:
             return response.text.strip()
         else:
-            return f"Hata koda takıldı: {response.status_code}"
+            return f"API Hatası (Kod {response.status_code}): Servis yanıt vermedi."
     except Exception as e:
-        return f"Bağlantı hatası: {e}"
+        return f"Bağlantı Hatası: {e}"
 
 st.title("⚖️ Court AI — Karar Mahkemesi")
 st.write("Karar vermekte zorlandığın olayı veya çatışmayı yaz, analiz başlasın.")

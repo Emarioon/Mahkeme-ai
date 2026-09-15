@@ -23,8 +23,13 @@ PROMPTS = {
 
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
-api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
-st.sidebar.caption("API anahtarını aistudio.google.com adresinden ücretsiz alabilirsin.")
+# Secrets kontrolü (Kendi anahtarın kayıtlıysa otomatik okur)
+api_key = st.secrets.get("GEMINI_API_KEY", "")
+
+# Secrets yoksa manuel alan görünür
+if not api_key:
+    api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
+    st.sidebar.caption("API anahtarını aistudio.google.com adresinden ücretsiz alabilirsin.")
 
 def ai_karakter_yanitla(rol_adi, olay_metni, client, ekstra_baglam=""):
     system_prompt = PROMPTS[rol_adi]
@@ -44,7 +49,7 @@ olay_input = st.text_area("Olay / İkilem", placeholder="Metni buraya yaz...", h
 
 if st.button("⚖️ Mahkemeyi Başlat", type="primary", use_container_width=True):
     if not api_key.strip():
-        st.error("Lütfen sol yan menüden Gemini API Key'inizi girin!")
+        st.error("API Anahtarı bulunamadı!")
     elif not olay_input.strip():
         st.warning("Lütfen bir olay yazın.")
     else:
@@ -68,3 +73,4 @@ if st.button("⚖️ Mahkemeyi Başlat", type="primary", use_container_width=Tru
             st.success(hikari_res)
         except Exception as err:
             st.error(f"Başlatma Hatası: {err}")
+            

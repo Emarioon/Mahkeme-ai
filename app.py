@@ -25,20 +25,46 @@ def ai_karakter_yanitla(rol_adi, olay_metni, ekstra_baglam=""):
     system_prompt = PROMPTS[rol_adi]
     full_prompt = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
     
-    url = "https://text.pollinations.ai/"
-    payload = {
-        "messages": [
-            {"role": "user", "content": full_prompt}
-        ],
-        "model": "openai-large"
-    }
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+        "Accept": "text/event-stream",
+        "Content-Type": "application/json",
+        "x-vqd-accept": "1"
+    })
     
     try:
-        response = requests.post(url, json=payload, timeout=30)
-        if response.status_code == 200:
-            return response.text.strip()
-        else:
-            return f"API Hatası (Kod {response.status_code}): Servis yanıt vermedi."
+        # Step 1: Fetch Token
+        status_resp = session.get("https://duckduckgo.com/duckchat/v1/status", timeout=10)
+        vqd = status_resp.headers.get("x-vqd-4")
+        
+        if not vqd:
+            return "Hata: Servis anahtarı alınamadı."
+            
+        session.headers.update({"x-vqd-4": vqd})
+        
+        # Step 2: Query Chat
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [{"role": "user", "content": full_prompt}]
+        }
+        
+        chat_resp = session.post("https://duckduckgo.com/duckchat/v1/chat", json=payload, timeout=25)
+        
+        output_text = ""
+        for line in chat_resp.text.split("\n"):
+            if line.startswith("data: "):
+                content_str = line[6:]
+                if content_str != "[DONE]":
+                    try:
+                        import json
+                        data = json.loads(content_str)
+                        if "message" in data:
+                            output_text += data["message"]
+                    except:
+                        pass
+                        
+        return output_text.strip() if output_text else "Yanıt alınamadı."
     except Exception as e:
         return f"Bağlantı Hatası: {e}"
 

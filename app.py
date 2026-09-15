@@ -1,5 +1,5 @@
 import streamlit as st
-import urllib.request
+import requests
 import urllib.parse
 
 st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
@@ -24,22 +24,20 @@ PROMPTS = {
 
 def ai_karakter_yanitla(rol_adi, olay_metni, ekstra_baglam=""):
     system_prompt = PROMPTS[rol_adi]
-    prompt_text = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
+    full_text = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
     
-    encoded_prompt = urllib.parse.quote(prompt_text)
-    url = f"https://text.pollinations.ai/{encoded_prompt}"
+    encoded_prompt = urllib.parse.quote(full_text)
+    # model=mistral parametresi eklenerek OpenAI bütçe kısıtlaması kesin olarak baypas edilir
+    url = f"https://text.pollinations.ai/{encoded_prompt}?model=mistral"
     
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
-    )
     try:
-        with urllib.request.urlopen(req) as response:
-            return response.read().decode("utf-8").strip()
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            return response.text.strip()
+        else:
+            return f"Hata koda takıldı: {response.status_code}"
     except Exception as e:
-        return f"Hata: {e}"
+        return f"Bağlantı hatası: {e}"
 
 st.title("⚖️ Court AI — Karar Mahkemesi")
 st.write("Karar vermekte zorlandığın olayı veya çatışmayı yaz, analiz başlasın.")

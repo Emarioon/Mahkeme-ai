@@ -12,7 +12,7 @@ PROMPTS = {
     ),
     "Lelouch": (
         "Sen Lelouch vi Britannia'sın. Savcı ve Stratejik Analistsin. Görevin olayı güç dengeleri, fırsat maliyetleri ve stratejik çıkar çerçevesinde analiz etmektir. "
-        "Tarafların gizli motivasyonlarını, ol olası riskleri, verilmesi gereken tavizleri ve hedefe ulaşmak için en efektif hamleyi belirle. "
+        "Tarafların gizli motivasyonlarını, olası riskleri, verilmesi gereken tavizleri ve hedefe ulaşmak için en efektif hamleyi belirle. "
         "Duygusallığa yer vermeden 'Maksimum zafer ve verimlilik için hangi riskler alınmalı?' sorusuna odaklan. Türkçe yanıt ver."
     ),
     "Hikari": (
@@ -29,7 +29,7 @@ def ai_karakter_yanitla(rol_adi, olay_metni, ekstra_baglam=""):
     url = "https://text.pollinations.ai/"
     payload = json.dumps({
         "messages": [{"role": "user", "content": prompt_text}],
-        "model": "openai"
+        "model": "mistral"
     }).encode("utf-8")
     
     req = urllib.request.Request(
@@ -70,4 +70,4 @@ if st.button("⚖️ Mahkemeyi Başlat", type="primary", use_container_width=Tru
             hikari_res = ai_karakter_yanitla("Hikari", olay_input, ekstra_baglam=baglam)
         st.subheader("⚖️ Hikari (Yargıç Kararı)")
         st.success(hikari_res)
-      
+        

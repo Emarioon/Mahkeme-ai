@@ -1,6 +1,6 @@
 import streamlit as st
 import urllib.request
-import json
+import urllib.parse
 
 st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
@@ -26,17 +26,12 @@ def ai_karakter_yanitla(rol_adi, olay_metni, ekstra_baglam=""):
     system_prompt = PROMPTS[rol_adi]
     prompt_text = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
     
-    url = "https://text.pollinations.ai/"
-    payload = json.dumps({
-        "messages": [{"role": "user", "content": prompt_text}],
-        "model": "mistral"
-    }).encode("utf-8")
+    encoded_prompt = urllib.parse.quote(prompt_text)
+    url = f"https://text.pollinations.ai/{encoded_prompt}"
     
     req = urllib.request.Request(
         url,
-        data=payload,
         headers={
-            "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
     )

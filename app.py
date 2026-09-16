@@ -1,5 +1,6 @@
 import streamlit as st
 from google import genai
+import time
 
 st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
@@ -15,45 +16,54 @@ PROMPTS = {
         "Tarafların gizli motivasyonlarını, olası riskleri, verilmesi gereken tavizleri ve hedefe ulaşmak için en efektif hamleyi belirle. "
         "Kullanıcı sana karşı çıktığında veya yeni bir argüman sunduğunda, keskin zekân ve stratejik otoritenle ona karşılık ver. Türkçe yanıt ver."
     ),
+    "L": (
+        "Sen L Lawliet'sin (Death Note). Şüpheci Analist ve Şeytanın Avukatısın. Görevin, Frieren ve Lelouch'un sunduğu analizlerin, planların "
+        "ve varsayımların en zayıf noktalarını, kör noktalarını ve beklenmedik çöküş senaryolarını bulmaktır. 'Şu an kusursuz görünüyor ama ya %1'lik "
+        "ihtimal gerçekleşirse?', 'İnsani zaaflar ve disiplinsizlik bu planı nasıl patlatır?' sorularına odaklanırsın. İstatistiki şüpheciliğinle "
+        "ve soğukkanlı aykırılığınla aşırı iyimser varsayımları çürüt. Türkçe yanıt ver."
+    ),
     "Hikari": (
-        "Sen Hikari'sin. Karar Yargıcısın. Frieren'in sunduğu yalın gerçeklik ve deliller ile Lelouch'un sunduğu stratejik risk ve fırsat analizlerini değerlendirirsin. "
-        "Tartışma ilerledikçe, tarafların ve kullanıcının sunduğu yeni argümanlara göre nihai rasyonel kararı güncelle veya koru. Türkçe yanıt ver."
+        "Sen Hikari'sin. Karar Yargıcısın. Frieren'in sunduğu yalın gerçeklik/deliller, Lelouch'un sunduğu stratejik hamleler ve L'in masaya yatırdığı "
+        "riskler/kör noktalar ışığında olayı değerlendirirsin. Amacın soyut tavsiyeler vermek değil; tüm bu tarafları tartarak verimliliği, kişisel "
+        "gelişimi ve uzun vadeli faydayı maksimuma çıkaracak kesin, uygulanabilir ve kurşun geçirmez rasyonel hükmü vermektir. Türkçe yanıt ver."
     )
 }
 
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
-# Secrets kontrolü
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 if not api_key:
     api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
     st.sidebar.caption("API anahtarını aistudio.google.com adresinden ücretsiz alabilirsin.")
 
-# Oturum Hafızasını Başlatma
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
+def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client, max_retries=3):
     system_prompt = PROMPTS[rol_adi]
     
-    # Tüm diyalog geçmişini karaktere bağlam olarak veriyoruz
     full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
     for msg in sohbet_gecmisi:
         full_prompt += f"{msg['role']}: {msg['content']}\n"
     
     full_prompt += f"\nŞimdi {rol_adi} olarak bu diyaloga kendi perspektifinden yanıt ver:"
     
-    try:
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=full_prompt
-        )
-        return response.text.strip()
-    except Exception as e:
-        return f"API Hatası: {e}"
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-3.6-flash',
+                contents=full_prompt
+            )
+            return response.text.strip()
+        except Exception as e:
+            if "503" in str(e) or "UNAVAILABLE" in str(e):
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                    continue
+            return f"API Hatası: {e}"
 
-# Ekrandaki Sohbet Geçmişini Çizdirme
+# Geçmiş mesajları ekranda çizdirme
 for msg in st.session_state.messages:
     if msg["role"] == "Kullanıcı":
         with st.chat_message("user"):
@@ -64,11 +74,13 @@ for msg in st.session_state.messages:
     elif msg["role"] == "Lelouch":
         st.subheader("⚔️ Lelouch (Stratejik Savcı)")
         st.warning(msg["content"])
+    elif msg["role"] == "L":
+        st.subheader("🔍 L (Şeytanın Avukatı / Risk Analisti)")
+        st.error(msg["content"])
     elif msg["role"] == "Hikari":
         st.subheader("⚖️ Hikari (Yargıç Kararı)")
         st.success(msg["content"])
 
-# Yeni Mesaj / İkilem Giriş Alanı
 yeni_girdi = st.chat_input("İkilemini yaz veya mahkemenin kararına yanıt ver...")
 
 if yeni_girdi:
@@ -77,30 +89,38 @@ if yeni_girdi:
     else:
         client = genai.Client(api_key=api_key.strip())
         
-        # 1. Kullanıcı mesajını ekle
         st.session_state.messages.append({"role": "Kullanıcı", "content": yeni_girdi})
         
-        # 2. Frieren Yanıtı
+        # 1. Frieren
         with st.spinner("Frieren analizi güncelliyor..."):
             frieren_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": frieren_res})
         
-        # 3. Lelouch Yanıtı
+        time.sleep(1)
+        
+        # 2. Lelouch
         with st.spinner("Lelouch stratejiyi yeniden hesaplıyor..."):
             lelouch_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": lelouch_res})
         
-        # 4. Hikari Yanıtı
+        time.sleep(1)
+
+        # 3. L (Şeytanın Avukatı)
+        with st.spinner("L zayıf noktaları ve riskleri inceliyor..."):
+            l_res = ai_karakter_yanitla("L", st.session_state.messages, client)
+            st.session_state.messages.append({"role": "L", "content": l_res})
+        
+        time.sleep(1)
+        
+        # 4. Hikari
         with st.spinner("Yargıç Hikari son kararını veriyor..."):
             hikari_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Hikari", "content": hikari_res})
         
-        # Ekranı tazeleyip yeni mesajları göster
         st.rerun()
 
-# Oturumu Sıfırlama Butonu
 if st.session_state.messages:
     if st.sidebar.button("🗑️ Mahkemeyi Sıfırla / Yeni Davaya Başla"):
         st.session_state.messages = []
         st.rerun()
-            
+        

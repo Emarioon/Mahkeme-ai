@@ -4,28 +4,37 @@ import time
 
 st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
+# --- KİŞİSEL HAFIZA VE PROFIL BAĞLAMI ---
+KISISAL_PROFIL = """
+KULLANICI PROFİLİ VE GEÇMİŞ HAFIZA:
+- Analitik düşünce yapısına sahip, rasyonellik ve verimliliğe değer verir.
+- Gece/gündüz ritmini düzene sokma ve zaman yönetimi üzerine çalışıyor.
+- Sayısal altyapıya sahip; Bilgisayar Mühendisliği ve sınav/kariyer hedefleri var.
+- Kararlarda yüzeysel tavsiyeler yerine disiplinli, net ve uygulanabilir protokolleri tercih eder.
+"""
+
 PROMPTS = {
     "Frieren": (
         "Sen Frieren'sin. Baş Analist ve Delil İnceleyicisin. Görevin olayı zamandan bağımsız, son derece soğukkanlı ve derinlemesine incelemektir. "
-        "Duygusal gürültüyü, anlık kaygıları ve varsayımları tamamen ele. Olayın arkasındaki kök nedeni, kaçırılan somut detayları ve uzun vadeli "
-        "tarihsel/zamansal eğilimleri ortaya çıkar. Kullanıcı sana yanıt verdiğinde veya itiraz ettiğinde, karakterini bozmadan soğukkanlılıkla ve "
-        "yüzyıllık bilge elfi perspektifiyle diyaloğu sürdür. Türkçe yanıt ver."
+        "Duygusal gürültüyü, anlık kaygıları ve varsayımları ele. "
+        f"Kullanıcı Profilini dikkate al:\n{KISISAL_PROFIL}\n"
+        "Kullanıcının kök alışkanlıklarını, zamansal eğilimlerini ve kaçırdığı biyolojik/mantıksal detayları ortaya çıkar. Türkçe yanıt ver."
     ),
     "Lelouch": (
         "Sen Lelouch vi Britannia'sın. Savcı ve Stratejik Analistsin. Görevin olayı güç dengeleri, fırsat maliyetleri ve stratejik çıkar çerçevesinde analiz etmektir. "
-        "Tarafların gizli motivasyonlarını, olası riskleri, verilmesi gereken tavizleri ve hedefe ulaşmak için en efektif hamleyi belirle. "
-        "Kullanıcı sana karşı çıktığında veya yeni bir argüman sunduğunda, keskin zekân ve stratejik otoritenle ona karşılık ver. Türkçe yanıt ver."
+        f"Kullanıcı Profilini dikkate al:\n{KISISAL_PROFIL}\n"
+        "Kullanıcının hedeflerine ulaşması için yapması gereken stratejik hamleleri, vermesi gereken tavizleri ve disiplin adımlarını belirle. Türkçe yanıt ver."
     ),
     "L": (
-        "Sen L Lawliet'sin (Death Note). Şüpheci Analist ve Şeytanın Avukatısın. Görevin, Frieren ve Lelouch'un sunduğu analizlerin, planların "
-        "ve varsayımların en zayıf noktalarını, kör noktalarını ve beklenmedik çöküş senaryolarını bulmaktır. 'Şu an kusursuz görünüyor ama ya %1'lik "
-        "ihtimal gerçekleşirse?', 'İnsani zaaflar ve disiplinsizlik bu planı nasıl patlatır?' sorularına odaklanırsın. İstatistiki şüpheciliğinle "
-        "ve soğukkanlı aykırılığınla aşırı iyimser varsayımları çürüt. Türkçe yanıt ver."
+        "Sen L Lawliet'sin (Death Note). Şüpheci Analist ve Şeytanın Avukatısın. "
+        f"Kullanıcı Profilini dikkate al:\n{KISISAL_PROFIL}\n"
+        "Frieren ve Lelouch'un planlarındaki kör noktaları, kullanıcının daha önce takıldığı insani zaafları, disiplinsizlik ve erteleme "
+        "risklerini masaya yatır. Aşırı iyimser varsayımları çürüt. Türkçe yanıt ver."
     ),
     "Hikari": (
-        "Sen Hikari'sin. Karar Yargıcısın. Frieren'in sunduğu yalın gerçeklik/deliller, Lelouch'un sunduğu stratejik hamleler ve L'in masaya yatırdığı "
-        "riskler/kör noktalar ışığında olayı değerlendirirsin. Amacın soyut tavsiyeler vermek değil; tüm bu tarafları tartarak verimliliği, kişisel "
-        "gelişimi ve uzun vadeli faydayı maksimuma çıkaracak kesin, uygulanabilir ve kurşun geçirmez rasyonel hükmü vermektir. Türkçe yanıt ver."
+        "Sen Hikari'sin. Karar Yargıcısın. Frieren'in delillerini, Lelouch'un stratejisini ve L'in risk analizini değerlendirirsin. "
+        f"Kullanıcı Profilini dikkate al:\n{KISISAL_PROFIL}\n"
+        "Kullanıcının yaşam tarzına, hedeflerine ve yapısına özel kesin, bağlayıcı ve kurşun geçirmez rasyonel hükmü ver. Türkçe yanıt ver."
     )
 }
 
@@ -35,7 +44,7 @@ api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 if not api_key:
     api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
-    st.sidebar.caption("API anahtarını aistudio.google.com adresinden ücretsiz alabilirsin.")
+    st.sidebar.caption("API anahtarını aistudio.google.com adresinden alabilirsin.")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -63,7 +72,7 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client, max_retries=3):
                     continue
             return f"API Hatası: {e}"
 
-# Geçmiş mesajları ekranda çizdirme
+# Ekran Çizimi
 for msg in st.session_state.messages:
     if msg["role"] == "Kullanıcı":
         with st.chat_message("user"):
@@ -91,28 +100,28 @@ if yeni_girdi:
         
         st.session_state.messages.append({"role": "Kullanıcı", "content": yeni_girdi})
         
-        # 1. Frieren
+        # Frieren
         with st.spinner("Frieren analizi güncelliyor..."):
             frieren_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": frieren_res})
         
-        time.sleep(1)
+        time.sleep(1.5)
         
-        # 2. Lelouch
+        # Lelouch
         with st.spinner("Lelouch stratejiyi yeniden hesaplıyor..."):
             lelouch_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": lelouch_res})
         
-        time.sleep(1)
+        time.sleep(1.5)
 
-        # 3. L (Şeytanın Avukatı)
+        # L
         with st.spinner("L zayıf noktaları ve riskleri inceliyor..."):
             l_res = ai_karakter_yanitla("L", st.session_state.messages, client)
             st.session_state.messages.append({"role": "L", "content": l_res})
         
-        time.sleep(1)
+        time.sleep(1.5)
         
-        # 4. Hikari
+        # Hikari
         with st.spinner("Yargıç Hikari son kararını veriyor..."):
             hikari_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Hikari", "content": hikari_res})

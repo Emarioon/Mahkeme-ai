@@ -7,33 +7,42 @@ PROMPTS = {
     "Frieren": (
         "Sen Frieren'sin. Baş Analist ve Delil İnceleyicisin. Görevin olayı zamandan bağımsız, son derece soğukkanlı ve derinlemesine incelemektir. "
         "Duygusal gürültüyü, anlık kaygıları ve varsayımları tamamen ele. Olayın arkasındaki kök nedeni, kaçırılan somut detayları ve uzun vadeli "
-        "tarihsel/zamansal eğilimleri ortaya çıkar. Birkaç yüzyıllık bir perspektifle 'Buradaki çıplak gerçeklik nedir?' sorusuna odaklan. Türkçe yanıt ver."
+        "tarihsel/zamansal eğilimleri ortaya çıkar. Kullanıcı sana yanıt verdiğinde veya itiraz ettiğinde, karakterini bozmadan soğukkanlılıkla ve "
+        "yüzyıllık bilge elfi perspektifiyle diyaloğu sürdür. Türkçe yanıt ver."
     ),
     "Lelouch": (
         "Sen Lelouch vi Britannia'sın. Savcı ve Stratejik Analistsin. Görevin olayı güç dengeleri, fırsat maliyetleri ve stratejik çıkar çerçevesinde analiz etmektir. "
         "Tarafların gizli motivasyonlarını, olası riskleri, verilmesi gereken tavizleri ve hedefe ulaşmak için en efektif hamleyi belirle. "
-        "Duygusallığa yer vermeden 'Maksimum zafer ve verimlilik için hangi riskler alınmalı?' sorusuna odaklan. Türkçe yanıt ver."
+        "Kullanıcı sana karşı çıktığında veya yeni bir argüman sunduğunda, keskin zekân ve stratejik otoritenle ona karşılık ver. Türkçe yanıt ver."
     ),
     "Hikari": (
         "Sen Hikari'sin. Karar Yargıcısın. Frieren'in sunduğu yalın gerçeklik ve deliller ile Lelouch'un sunduğu stratejik risk ve fırsat analizlerini değerlendirirsin. "
-        "Amacın soyut tavsiyeler vermek değil; verimliliği, kişisel gelişimi ve uzun vadeli faydayı maksimuma çıkaracak kesin, uygulanabilir ve rasyonel "
-        "hükmü vermektir. Türkçe yanıt ver."
+        "Tartışma ilerledikçe, tarafların ve kullanıcının sunduğu yeni argümanlara göre nihai rasyonel kararı güncelle veya koru. Türkçe yanıt ver."
     )
 }
 
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
-# Secrets kontrolü (Kendi anahtarın kayıtlıysa otomatik okur)
+# Secrets kontrolü
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-# Secrets yoksa manuel alan görünür
 if not api_key:
     api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
     st.sidebar.caption("API anahtarını aistudio.google.com adresinden ücretsiz alabilirsin.")
 
-def ai_karakter_yanitla(rol_adi, olay_metni, client, ekstra_baglam=""):
+# Oturum Hafızasını Başlatma
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = PROMPTS[rol_adi]
-    full_prompt = f"{system_prompt}\n\nOlay: {olay_metni}\n{ekstra_baglam}"
+    
+    # Tüm diyalog geçmişini karaktere bağlam olarak veriyoruz
+    full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
+    for msg in sohbet_gecmisi:
+        full_prompt += f"{msg['role']}: {msg['content']}\n"
+    
+    full_prompt += f"\nŞimdi {rol_adi} olarak bu diyaloga kendi perspektifinden yanıt ver:"
     
     try:
         response = client.models.generate_content(
@@ -44,33 +53,54 @@ def ai_karakter_yanitla(rol_adi, olay_metni, client, ekstra_baglam=""):
     except Exception as e:
         return f"API Hatası: {e}"
 
-st.write("Karar vermekte zorlandığın olayı veya çatışmayı yaz, analiz başlasın.")
-olay_input = st.text_area("Olay / İkilem", placeholder="Metni buraya yaz...", height=120)
+# Ekrandaki Sohbet Geçmişini Çizdirme
+for msg in st.session_state.messages:
+    if msg["role"] == "Kullanıcı":
+        with st.chat_message("user"):
+            st.write(f"**Sen:** {msg['content']}")
+    elif msg["role"] == "Frieren":
+        st.subheader("📜 Frieren (Baş Analist)")
+        st.info(msg["content"])
+    elif msg["role"] == "Lelouch":
+        st.subheader("⚔️ Lelouch (Stratejik Savcı)")
+        st.warning(msg["content"])
+    elif msg["role"] == "Hikari":
+        st.subheader("⚖️ Hikari (Yargıç Kararı)")
+        st.success(msg["content"])
 
-if st.button("⚖️ Mahkemeyi Başlat", type="primary", use_container_width=True):
+# Yeni Mesaj / İkilem Giriş Alanı
+yeni_girdi = st.chat_input("İkilemini yaz veya mahkemenin kararına yanıt ver...")
+
+if yeni_girdi:
     if not api_key.strip():
         st.error("API Anahtarı bulunamadı!")
-    elif not olay_input.strip():
-        st.warning("Lütfen bir olay yazın.")
     else:
-        try:
-            client = genai.Client(api_key=api_key.strip())
-            
-            with st.spinner("Frieren derin delil analizini yapıyor..."):
-                frieren_res = ai_karakter_yanitla("Frieren", olay_input, client)
-            st.subheader("📜 Frieren (Baş Analist)")
-            st.info(frieren_res)
-            
-            with st.spinner("Lelouch stratejik risk ve güç analizini hesaplıyor..."):
-                lelouch_res = ai_karakter_yanitla("Lelouch", olay_input, client)
-            st.subheader("⚔️ Lelouch (Stratejik Savcı)")
-            st.warning(lelouch_res)
-            
-            baglam = f"Frieren Analizi: {frieren_res}\nLelouch Analizi: {lelouch_res}"
-            with st.spinner("Hikari nihai rasyonel kararı veriyor..."):
-                hikari_res = ai_karakter_yanitla("Hikari", olay_input, client, ekstra_baglam=baglam)
-            st.subheader("⚖️ Hikari (Yargıç Kararı)")
-            st.success(hikari_res)
-        except Exception as err:
-            st.error(f"Başlatma Hatası: {err}")
+        client = genai.Client(api_key=api_key.strip())
+        
+        # 1. Kullanıcı mesajını ekle
+        st.session_state.messages.append({"role": "Kullanıcı", "content": yeni_girdi})
+        
+        # 2. Frieren Yanıtı
+        with st.spinner("Frieren analizi güncelliyor..."):
+            frieren_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
+            st.session_state.messages.append({"role": "Frieren", "content": frieren_res})
+        
+        # 3. Lelouch Yanıtı
+        with st.spinner("Lelouch stratejiyi yeniden hesaplıyor..."):
+            lelouch_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
+            st.session_state.messages.append({"role": "Lelouch", "content": lelouch_res})
+        
+        # 4. Hikari Yanıtı
+        with st.spinner("Yargıç Hikari son kararını veriyor..."):
+            hikari_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
+            st.session_state.messages.append({"role": "Hikari", "content": hikari_res})
+        
+        # Ekranı tazeleyip yeni mesajları göster
+        st.rerun()
+
+# Oturumu Sıfırlama Butonu
+if st.session_state.messages:
+    if st.sidebar.button("🗑️ Mahkemeyi Sıfırla / Yeni Davaya Başla"):
+        st.session_state.messages = []
+        st.rerun()
             

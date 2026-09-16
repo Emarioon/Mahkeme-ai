@@ -9,6 +9,7 @@ st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
 # --- GOOGLE SHEETS CANLI BAĞLANTISI ---
 def get_gspread_sheet():
+    """Her istekte güncel E-Tablo oturumunu döndürür."""
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -23,6 +24,7 @@ def get_gspread_sheet():
         return None
 
 def get_past_memory():
+    """Hafızayı anlık olarak Google Sheets'ten okur."""
     sheet = get_gspread_sheet()
     if not sheet:
         return "Geçmiş hafıza bağlantısı kurulamadı."
@@ -32,13 +34,14 @@ def get_past_memory():
             return "Geçmiş kayıt bulunmuyor."
         
         memory_text = "GEÇMİŞ MAHKEME KARARLARI VE ÖĞRENİLENLER:\n"
-        for r in records[-5:]:
+        for r in records[-5:]:  # Son 5 emsal kararı çeker
             memory_text += f"- [{r.get('Tarih','')}] Kategori: {r.get('Kategori','')}, Detay/Karar: {r.get('Detay','')}\n"
         return memory_text
     except Exception as e:
         return f"Hafıza okuma hatası: {e}"
 
 def save_memory(kategori, detay):
+    """Kararı anında veritabanına işler."""
     sheet = get_gspread_sheet()
     if sheet:
         try:
@@ -51,6 +54,7 @@ def save_memory(kategori, detay):
 
 # --- KARAKTER PROMPT ŞABLONLARI ---
 def get_system_prompt(rol_adi):
+    """Canlı hafıza ile beslenen karakter promptları."""
     canli_hafiza = get_past_memory()
     
     prompts = {
@@ -83,6 +87,7 @@ def get_system_prompt(rol_adi):
     }
     return prompts.get(rol_adi, "")
 
+# --- ARAYÜZ VE API AKIŞI ---
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -93,7 +98,6 @@ if not api_key:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- KOTA DOSTU VE ÇOKLU MODEL DÖNÜŞÜMLÜ YANIT FONKSİYONU ---
 def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = get_system_prompt(rol_adi)
     full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
@@ -101,8 +105,8 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
         full_prompt += f"{msg['role']}: {msg['content']}\n"
     full_prompt += f"\nŞimdi {rol_adi} olarak yanıt ver:"
     
-    # Sırasıyla denenecek modeller
-    model_list = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    # 3.6-flash öncelikli, hatada sırasıyla diğerlerine geçer
+    model_list = ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-1.5-flash']
     
     for model_name in model_list:
         try:
@@ -112,13 +116,13 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
             )
             return response.text.strip()
         except Exception as e:
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                # Bir modelin kotası dolduysa bir sonrakini dene
+            # 404 (bulunamadı) veya 429 (kota) hatasında sonraki modeli dene
+            if any(err in str(e) for err in ["429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND"]):
                 continue
             else:
                 return f"API Hatası ({model_name}): {e}"
                 
-    return "⚠️ Günlük ücretsiz API kotanız tamamen doldu. Lütfen birkaç saat sonra veya yarın tekrar deneyin."
+    return "⚠️ Uyarı: Seçilen modellerin hiçbiri yanıt vermedi. Lütfen API anahtarınızı veya kotanızı kontrol edin."
 
 # Ekran Çizimi
 for msg in st.session_state.messages:
@@ -150,22 +154,23 @@ if yeni_girdi:
         with st.spinner("Frieren analizi güncelliyor..."):
             frieren_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": frieren_res})
-        time.sleep(2.0)
+        time.sleep(1.5)
         
         with st.spinner("Lelouch stratejiyi yeniden hesaplıyor..."):
             lelouch_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": lelouch_res})
-        time.sleep(2.0)
+        time.sleep(1.5)
 
         with st.spinner("L zayıf noktaları ve riskleri inceliyor..."):
             l_res = ai_karakter_yanitla("L", st.session_state.messages, client)
             st.session_state.messages.append({"role": "L", "content": l_res})
-        time.sleep(2.0)
+        time.sleep(1.5)
         
         with st.spinner("Yargıç Hikari son kararını veriyor..."):
             hikari_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Hikari", "content": hikari_res})
             
+            # Kararı veritabanına kaydet
             save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}... -> Hüküm: {hikari_res[:120]}...")
         
         st.rerun()

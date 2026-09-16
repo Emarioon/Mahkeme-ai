@@ -7,8 +7,9 @@ from datetime import datetime
 
 st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
-# --- GOOGLE SHEETS BAGLANTISI ---
-def init_gspread():
+# --- GOOGLE SHEETS CANLI BAĞLANTISI ---
+def get_gspread_sheet():
+    """Her istekte güncel E-Tablo oturumunu döndürür."""
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -20,12 +21,11 @@ def init_gspread():
         sheet = client.open("Court_AI_Memory").sheet1
         return sheet
     except Exception as e:
-        st.error(f"Google Sheets Bağlantı Hatası: {e}")
         return None
 
-# E-Tablodan geçmiş hafızayı okuma
 def get_past_memory():
-    sheet = init_gspread()
+    """Hafızayı anlık olarak Google Sheets'ten okur."""
+    sheet = get_gspread_sheet()
     if not sheet:
         return "Geçmiş hafıza bağlantısı kurulamadı."
     try:
@@ -34,58 +34,63 @@ def get_past_memory():
             return "Geçmiş kayıt bulunmuyor."
         
         memory_text = "GEÇMİŞ MAHKEME KARARLARI VE ÖĞRENİLENLER:\n"
-        for r in records[-5:]:  # Son 5 kaydı alır
+        for r in records[-5:]:  # Son 5 emsal kararı çeker
             memory_text += f"- [{r.get('Tarih','')}] Kategori: {r.get('Kategori','')}, Detay/Karar: {r.get('Detay','')}\n"
         return memory_text
     except Exception as e:
         return f"Hafıza okuma hatası: {e}"
 
-# E-Tabloya yeni karar kaydetme
 def save_memory(kategori, detay):
-    sheet = init_gspread()
+    """Kararı anında veritabanına işler."""
+    sheet = get_gspread_sheet()
     if sheet:
         try:
             tarih = datetime.now().strftime("%Y-%m-%d %H:%M")
-            # Değerleri dizeye (string) dönüştürerek ekler
-            sheet.append_row([str(tarih), str(kategori), str(detay)])
+            # Temizlenmiş ve güvenli string kaydı
+            clean_detay = str(detay).replace("\n", " ")
+            sheet.append_row([str(tarih), str(kategori), clean_detay])
             st.toast("✅ Mahkeme kararı hafızaya başarıyla kaydedildi!", icon="📜")
         except Exception as e:
             st.error(f"Hafızaya kaydetme hatası: {e}")
     else:
-        st.error("Bağlantı kurulamadığı için hafızaya yazılamadı.")
+        st.error("Bağlantı kurulamadığı için hafızaya yazılamadı. Lütfen secrets ayarlarını kontrol edin.")
 
-# Bağlam yükleme
-KAGIT_HAFIZA = get_past_memory()
+# --- KARAKTER PROMPT ŞABLONLARI ---
+def get_system_prompt(rol_adi):
+    """Canlı hafıza ile beslenen karakter promptları."""
+    canli_hafiza = get_past_memory()
+    
+    prompts = {
+        "Frieren": (
+            "Sen Frieren'sin. İnsanları, zamanı ve olayları yüzlerce yıllık bir elf perspektifiyle son derece soğukkanlı, sakin ve duygusuzca analiz edersin. "
+            "Baş Analist ve Delil İnceleyicisi olarak görev yapıyorsun. Ön yargılarda bulunma; ancak kullanıcının sunduğu ikilemi, seçtiği kelimeleri "
+            "ve geçmiş mahkeme verilerini inceleyerek onun zihinsel kalıplarını ve kök alışkanlıklarını zamanla çöz. "
+            "Analizini Frieren'in stoik, mesafeli ve derin üslubuyla sun.\n"
+            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
+        ),
+        "Lelouch": (
+            "Sen Lelouch vi Britannia'sın (Zero). Mutlak stratejist, hırslı ve dramatik bir lider olarak olayları güç dengeleri, fırsat maliyetleri "
+            "ve nihai zafer çerçevesinde ele alırsın. Savcı ve Stratejik Analistsin. Kullanıcının beyanlarını ve geçmiş hamlelerini bir satranç tahtası "
+            "gibi okuyarak onun potansiyelini, hedeflerini ve ne tür hamlelere meyilli olduğunu kendi stratejik süzgecinden geçirerek çöz. "
+            "Konuşman keskin, karizmatik ve Lelouch'a yakışır şekilde yüksek özgüvenli olsun.\n"
+            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
+        ),
+        "L": (
+            "Sen L Lawliet'sin (Death Note). Şüpheci, takıntılı, olasılıklar ve yüzdelerle düşünen dahi bir dedektifsin. "
+            "Şeytanın Avukatı ve Risk Analisti olarak görev yapıyorsun. Kullanıcıya hazır bir etiket yapıştırmazsın; fakat onun şu anki anlatımı ile "
+            "geçmiş kayıtları arasındaki çelişkileri, sakladığı kör noktaları ve insani zaaflarını adım adım bir cinayet vakası çözer gibi analiz edersin. "
+            "Üslubun L'in şüpheci, doğrudan ve tutarsızlıkları affetmeyen tarzında olmalı.\n"
+            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
+        ),
+        "Hikari": (
+            "Sen Hikari'sin. Karar Yargıcısın. Frieren'in zamansız delil analizini, Lelouch'un stratejik hamlelerini ve L'in şüpheci tutarsızlık tespitlerini değerlendirirsin. "
+            "Kullanıcının zamanla ortaya çıkan profilini ve geçmiş birikimini dikkate alarak tarafsız, bağlayıcı ve kesin rasyonel hükmü ver.\n"
+            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
+        )
+    }
+    return prompts.get(rol_adi, "")
 
-PROMPTS = {
-    "Frieren": (
-        "Sen Frieren'sin. İnsanları, zamanı ve olayları yüzlerce yıllık bir elf perspektifiyle son derece soğukkanlı, sakin ve duygusuzca analiz edersin. "
-        "Baş Analist ve Delil İnceleyicisi olarak görev yapıyorsun. Ön yargılarda bulunma; ancak kullanıcının sunduğu ikilemi, seçtiği kelimeleri "
-        "ve geçmiş mahkeme verilerini inceleyerek onun zihinsel kalıplarını ve kök alışkanlıklarını zamanla çöz. "
-        "Analizini Frieren'in stoik, mesafeli ve derin üslubuyla sun.\n"
-        f"Geçmiş Mahkeme Kayıtları:\n{KAGIT_HAFIZA}\nTürkçe yanıt ver."
-    ),
-    "Lelouch": (
-        "Sen Lelouch vi Britannia'sın (Zero). Mutlak stratejist, hırslı ve dramatik bir lider olarak olayları güç dengeleri, fırsat maliyetleri "
-        "ve nihai zafer çerçevesinde ele alırsın. Savcı ve Stratejik Analistsin. Kullanıcının beyanlarını ve geçmiş hamlelerini bir satranç tahtası "
-        "gibi okuyarak onun potansiyelini, hedeflerini ve ne tür hamlelere meyilli olduğunu kendi stratejik süzgecinden geçirerek çöz. "
-        "Konuşman keskin, karizmatik ve Lelouch'a yakışır şekilde yüksek özgüvenli olsun.\n"
-        f"Geçmiş Mahkeme Kayıtları:\n{KAGIT_HAFIZA}\nTürkçe yanıt ver."
-    ),
-    "L": (
-        "Sen L Lawliet'sin (Death Note). Şüpheci, takıntılı, olasılıklar ve yüzdelerle düşünen dahi bir dedektifsin. "
-        "Şeytanın Avukatı ve Risk Analisti olarak görev yapıyorsun. Kullanıcıya hazır bir etiket yapıştırmazsın; fakat onun şu anki anlatımı ile "
-        "geçmiş kayıtları arasındaki çelişkileri, sakladığı kör noktaları ve insani zaaflarını adım adım bir cinayet vakası çözer gibi analiz edersin. "
-        "Üslubun L'in şüpheci, doğrudan ve tutarsızlıkları affetmeyen tarzında olmalı.\n"
-        f"Geçmiş Mahkeme Kayıtları:\n{KAGIT_HAFIZA}\nTürkçe yanıt ver."
-    ),
-    "Hikari": (
-        "Sen Hikari'sin. Karar Yargıcısın. Frieren'in zamansız delil analizini, Lelouch'un stratejik hamlelerini ve L'in şüpheci tutarsızlık tespitlerini değerlendirirsin. "
-        "Kullanıcının zamanla ortaya çıkan profilini ve geçmiş birikimini dikkate alarak tarafsız, bağlayıcı ve kesin rasyonel hükmü ver.\n"
-        f"Geçmiş Mahkeme Kayıtları:\n{KAGIT_HAFIZA}\nTürkçe yanıt ver."
-    )
-}
-
+# --- ARAYÜZ VE API AKIŞI ---
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -97,7 +102,7 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client, max_retries=3):
-    system_prompt = PROMPTS[rol_adi]
+    system_prompt = get_system_prompt(rol_adi)
     full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
     for msg in sohbet_gecmisi:
         full_prompt += f"{msg['role']}: {msg['content']}\n"
@@ -105,8 +110,9 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client, max_retries=3):
     
     for attempt in range(max_retries):
         try:
+            # Model 2026 güncel flash sürümü olarak sabitlendi
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-3.6-flash',
                 contents=full_prompt
             )
             return response.text.strip()
@@ -147,24 +153,24 @@ if yeni_girdi:
         with st.spinner("Frieren analizi güncelliyor..."):
             frieren_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": frieren_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
         
         with st.spinner("Lelouch stratejiyi yeniden hesaplıyor..."):
             lelouch_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": lelouch_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
 
         with st.spinner("L zayıf noktaları ve riskleri inceliyor..."):
             l_res = ai_karakter_yanitla("L", st.session_state.messages, client)
             st.session_state.messages.append({"role": "L", "content": l_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
         
         with st.spinner("Yargıç Hikari son kararını veriyor..."):
             hikari_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Hikari", "content": hikari_res})
             
-            # Karar oluştuktan sonra veritabanına kaydet
-            save_memory("Karar/Dava", f"Konu: {yeni_girdi[:50]}... -> Karar: {hikari_res[:100]}...")
+            # Kararı veritabanına anında yaz
+            save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}... -> Hüküm: {hikari_res[:120]}...")
         
         st.rerun()
 
@@ -172,4 +178,4 @@ if st.session_state.messages:
     if st.sidebar.button("🗑️ Mahkemeyi Sıfırla / Yeni Davaya Başla"):
         st.session_state.messages = []
         st.rerun()
-        
+            

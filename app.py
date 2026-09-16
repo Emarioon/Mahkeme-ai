@@ -9,7 +9,6 @@ st.set_page_config(page_title="Court AI", page_icon="⚖️", layout="centered")
 
 # --- GOOGLE SHEETS CANLI BAĞLANTISI ---
 def get_gspread_sheet():
-    """Her istekte güncel E-Tablo oturumunu döndürür."""
     try:
         creds_dict = dict(st.secrets["gcp_service_account"])
         scopes = [
@@ -24,7 +23,6 @@ def get_gspread_sheet():
         return None
 
 def get_past_memory():
-    """Hafızayı anlık olarak Google Sheets'ten okur."""
     sheet = get_gspread_sheet()
     if not sheet:
         return "Geçmiş hafıza bağlantısı kurulamadı."
@@ -34,30 +32,25 @@ def get_past_memory():
             return "Geçmiş kayıt bulunmuyor."
         
         memory_text = "GEÇMİŞ MAHKEME KARARLARI VE ÖĞRENİLENLER:\n"
-        for r in records[-5:]:  # Son 5 emsal kararı çeker
+        for r in records[-5:]:
             memory_text += f"- [{r.get('Tarih','')}] Kategori: {r.get('Kategori','')}, Detay/Karar: {r.get('Detay','')}\n"
         return memory_text
     except Exception as e:
         return f"Hafıza okuma hatası: {e}"
 
 def save_memory(kategori, detay):
-    """Kararı anında veritabanına işler."""
     sheet = get_gspread_sheet()
     if sheet:
         try:
             tarih = datetime.now().strftime("%Y-%m-%d %H:%M")
-            # Temizlenmiş ve güvenli string kaydı
             clean_detay = str(detay).replace("\n", " ")
             sheet.append_row([str(tarih), str(kategori), clean_detay])
             st.toast("✅ Mahkeme kararı hafızaya başarıyla kaydedildi!", icon="📜")
         except Exception as e:
             st.error(f"Hafızaya kaydetme hatası: {e}")
-    else:
-        st.error("Bağlantı kurulamadığı için hafızaya yazılamadı. Lütfen secrets ayarlarını kontrol edin.")
 
 # --- KARAKTER PROMPT ŞABLONLARI ---
 def get_system_prompt(rol_adi):
-    """Canlı hafıza ile beslenen karakter promptları."""
     canli_hafiza = get_past_memory()
     
     prompts = {
@@ -90,7 +83,6 @@ def get_system_prompt(rol_adi):
     }
     return prompts.get(rol_adi, "")
 
-# --- ARAYÜZ VE API AKIŞI ---
 st.title("⚖️ Court AI — Karar Mahkemesi")
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
@@ -101,27 +93,32 @@ if not api_key:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client, max_retries=3):
+# --- KOTA DOSTU VE ÇOKLU MODEL DÖNÜŞÜMLÜ YANIT FONKSİYONU ---
+def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = get_system_prompt(rol_adi)
     full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
     for msg in sohbet_gecmisi:
         full_prompt += f"{msg['role']}: {msg['content']}\n"
     full_prompt += f"\nŞimdi {rol_adi} olarak yanıt ver:"
     
-    for attempt in range(max_retries):
+    # Sırasıyla denenecek modeller
+    model_list = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash']
+    
+    for model_name in model_list:
         try:
-            # Model 2026 güncel flash sürümü olarak sabitlendi
             response = client.models.generate_content(
-                model='gemini-3.6-flash',
+                model=model_name,
                 contents=full_prompt
             )
             return response.text.strip()
         except Exception as e:
-            if "503" in str(e) or "UNAVAILABLE" in str(e):
-                if attempt < max_retries - 1:
-                    time.sleep(2)
-                    continue
-            return f"API Hatası: {e}"
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                # Bir modelin kotası dolduysa bir sonrakini dene
+                continue
+            else:
+                return f"API Hatası ({model_name}): {e}"
+                
+    return "⚠️ Günlük ücretsiz API kotanız tamamen doldu. Lütfen birkaç saat sonra veya yarın tekrar deneyin."
 
 # Ekran Çizimi
 for msg in st.session_state.messages:
@@ -153,23 +150,22 @@ if yeni_girdi:
         with st.spinner("Frieren analizi güncelliyor..."):
             frieren_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": frieren_res})
-        time.sleep(1.0)
+        time.sleep(2.0)
         
         with st.spinner("Lelouch stratejiyi yeniden hesaplıyor..."):
             lelouch_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": lelouch_res})
-        time.sleep(1.0)
+        time.sleep(2.0)
 
         with st.spinner("L zayıf noktaları ve riskleri inceliyor..."):
             l_res = ai_karakter_yanitla("L", st.session_state.messages, client)
             st.session_state.messages.append({"role": "L", "content": l_res})
-        time.sleep(1.0)
+        time.sleep(2.0)
         
         with st.spinner("Yargıç Hikari son kararını veriyor..."):
             hikari_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Hikari", "content": hikari_res})
             
-            # Kararı veritabanına anında yaz
             save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}... -> Hüküm: {hikari_res[:120]}...")
         
         st.rerun()
@@ -178,4 +174,4 @@ if st.session_state.messages:
     if st.sidebar.button("🗑️ Mahkemeyi Sıfırla / Yeni Davaya Başla"):
         st.session_state.messages = []
         st.rerun()
-            
+        

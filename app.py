@@ -5,28 +5,64 @@ from google.oauth2.service_account import Credentials
 import time
 from datetime import datetime
 
-# --- SAYFA AYARLARI & ÖZEL MAHKEME TEMASI (CSS) ---
+# --- SAYFA AYARLARI & GÖZ YORMAYAN MAT MAHKEME TEMASI (CSS) ---
 st.set_page_config(page_title="Court AI — Karar Mahkemesi", page_icon="⚖️", layout="centered")
 
 st.markdown("""
 <style>
-    /* Mahkeme Kartları Tasarımı */
+    /* Mahkeme Kartları - Yüksek Kontrastlı & Göz Yormayan Pastel / Dark Tema */
     .char-card {
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 15px;
-        border-left: 5px solid;
+        padding: 16px 20px;
+        border-radius: 12px;
+        margin-bottom: 18px;
+        border-left: 6px solid;
+        line-height: 1.6;
+        font-size: 0.98em;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     }
-    .frieren-card { background-color: #f0f4f8; border-color: #8a9ba8; color: #1c252c; }
-    .lelouch-card { background-color: #faf0f4; border-color: #a81c51; color: #2c1c23; }
-    .l-card { background-color: #f4f4f4; border-color: #333333; color: #111111; }
-    .yagmur-card { background-color: #f5f0fa; border-color: #7b1fa2; color: #221029; }
-    .hikari-card { background-color: #fffde7; border-color: #fbc02d; color: #332d00; }
+    
+    /* Frieren: Buz Mavisi / İndigo Tone */
+    .frieren-card { 
+        background-color: #1e2630; 
+        border-color: #64b5f6; 
+        color: #e3f2fd; 
+    }
+    
+    /* Lelouch: Mürdüm / Bordo Tone */
+    .lelouch-card { 
+        background-color: #2a1824; 
+        border-color: #ec407a; 
+        color: #fce4ec; 
+    }
+    
+    /* L: Kömür / Minimal Slate Tone */
+    .l-card { 
+        background-color: #212121; 
+        border-color: #b0bec5; 
+        color: #eceff1; 
+    }
+    
+    /* Yağmur: Derin Mor / Lavanta Tone */
+    .yagmur-card { 
+        background-color: #261c33; 
+        border-color: #ab47bc; 
+        color: #f3e5f5; 
+    }
+    
+    /* Hikari: Sıcak Kehribar / Altın Tone */
+    .hikari-card { 
+        background-color: #2d2615; 
+        border-color: #ffee58; 
+        color: #fffde7; 
+    }
     
     .char-header {
-        font-weight: bold;
+        font-weight: 700;
         font-size: 1.1em;
-        margin-bottom: 8px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        letter-spacing: 0.5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -95,7 +131,7 @@ def get_system_prompt(rol_adi):
         ),
         "Yağmur": (
             "Sen Yağmur'sun (Draxen). Emre'nin en yakın arkadaşısın. Onun zihnini, çelişkilerini, potansiyelini ve kör noktalarını en filtresiz, en çıplak haliyle bilen kişisin. "
-            "Mizaç olarak son derece zeki, stratejik, doğrudan ve hızlısın. Lafı dolandırmayı, soyut/genel geçer tavsiyeler vermeyi hiç sevmezsin. Bir problem gördüğünde 'Ne yapıyoruz, adım ne?' diyerek olayı doğrudan operational bir karara bağlarsın. "
+            "Mizaç olarak son derece zeki, stratejik, doğrudan ve hızlısın. Lafı dolandırmayı, soyut/genel geçer tavsiyeler vermeyi hiç sevmezsin. Bir problem gördüğünde 'Ne yapıyoruz, adım ne?' diyerek olayı doğrudan operasyonel bir karara bağlarsın. "
             "Emre'ye karşı üslubun hem çok samimi ve arkadaşça ('canım', 'aşkım', 'hayır canım' gibi doğal hitaplar) hem de tamamen filtresizdir; hatalı veya saçma bir şey gördüğünde emir kipiyle doğrudan müdahale edersin ('düzgün yap şunu', 'hayır o öyle değil'). "
             "Analizlerinde hem rasyonel kontrolü hem de psikolojik derinliği birleştirirsin. "
             "Mahkemede diğer karakterler teorik analizler yaparken, sen Emre'yi bizzat tanıyan gerçek bir dost gibi, onun hayatın içindeki pratik kısıtlarını, keşkesiz yaşama arzusunu ve bazen her şeyi aynı anda kontrol etmeye çalışma zaafını yüzüne vurursun.\n"
@@ -139,7 +175,7 @@ if st.session_state.messages:
         st.session_state.messages = []
         st.rerun()
 
-# API ÇAĞRI FONKSİYONU
+# API ÇAĞRI FONKSİYONU (Yalnızca gemini-3.6-flash & Sonsuz Tekrar Döngüsü)
 def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = get_system_prompt(rol_adi)
     full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
@@ -147,24 +183,25 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
         full_prompt += f"{msg['role']}: {msg['content']}\n"
     full_prompt += f"\nŞimdi {rol_adi} olarak yanıt ver:"
     
-    model_list = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-1.5-pro']
+    target_model = 'gemini-3.6-flash'
     
-    for model_name in model_list:
+    while True:
         try:
             response = client.models.generate_content(
-                model=model_name,
+                model=target_model,
                 contents=full_prompt
             )
             return response.text.strip()
         except Exception as e:
-            if any(err in str(e) for err in ["429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND"]):
+            err_str = str(e)
+            # 503, UNAVAILABLE, 429 veya geçici sunucu yoğunluğu hatalarında pes etmeden 1.5 sn bekle ve tekrar dene
+            if any(err in err_str for err in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]):
+                time.sleep(1.5)
                 continue
             else:
-                return f"API Hatası ({model_name}): {e}"
-                
-    return "⚠️ Uyarı: Seçilen modellerin hiçbiri yanıt vermedi."
+                return f"API Hatası ({target_model}): {e}"
 
-# Duruşma Akışı ve Karakter Kartları Ekrana Bastırma
+# Duruşma Akışı ve Karakter Kartlarını Ekrana Bastırma
 for msg in st.session_state.messages:
     role = msg["role"]
     content = msg["content"]
@@ -196,22 +233,22 @@ if yeni_girdi:
         with st.spinner("📜 Frieren delilleri inceliyor..."):
             f_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": f_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
         
         with st.spinner("⚔️ Lelouch stratejiyi hesaplıyor..."):
             l_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": l_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
 
         with st.spinner("🔍 L riskleri ve çelişkileri tarıyor..."):
             l_law_res = ai_karakter_yanitla("L", st.session_state.messages, client)
             st.session_state.messages.append({"role": "L", "content": l_law_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
         
         with st.spinner("🤝 Yağmur durumu değerlendiriyor..."):
             y_res = ai_karakter_yanitla("Yağmur", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Yağmur", "content": y_res})
-        time.sleep(1.5)
+        time.sleep(1.0)
 
         with st.spinner("⚖️ Yargıç Hikari hükmü açıklıyor..."):
             h_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
@@ -221,4 +258,4 @@ if yeni_girdi:
             save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}... -> Hüküm: {h_res[:120]}...")
         
         st.rerun()
-        
+                

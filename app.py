@@ -2,41 +2,10 @@ import streamlit as st
 from google import genai
 import gspread
 from google.oauth2.service_account import Credentials
-import time
 from datetime import datetime
 
-# --- SAYFA AYARLARI & GÖZ YORMAYAN MAT MAHKEME TEMASI (CSS) ---
+# --- SAYFA AYARLARI ---
 st.set_page_config(page_title="Court AI — Karar Mahkemesi", page_icon="⚖️", layout="centered")
-
-st.markdown("""
-<style>
-    /* Mahkeme Kartları - Dark Tema */
-    .char-card {
-        padding: 16px 20px;
-        border-radius: 12px;
-        margin-bottom: 18px;
-        border-left: 6px solid;
-        line-height: 1.6;
-        font-size: 0.98em;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-    }
-    
-    .frieren-card { background-color: #1e2630; border-color: #64b5f6; color: #e3f2fd; }
-    .lelouch-card { background-color: #2a1824; border-color: #ec407a; color: #fce4ec; }
-    .l-card { background-color: #212121; border-color: #b0bec5; color: #eceff1; }
-    .yagmur-card { background-color: #261c33; border-color: #ab47bc; color: #f3e5f5; }
-    .hikari-card { background-color: #2d2615; border-color: #ffee58; color: #fffde7; }
-    
-    .char-header {
-        font-weight: 700;
-        font-size: 1.1em;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        letter-spacing: 0.5px;
-    }
-</style>
-""", unsafe_allow_html=True)
 
 # --- GOOGLE SHEETS CANLI BAĞLANTISI ---
 def get_gspread_sheet():
@@ -48,8 +17,7 @@ def get_gspread_sheet():
         ]
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(credentials)
-        sheet = client.open("Court_AI_Memory").sheet1
-        return sheet
+        return client.open("Court_AI_Memory").sheet1
     except Exception:
         return None
 
@@ -63,7 +31,7 @@ def get_past_memory():
             return "Geçmiş kayıt bulunmuyor."
         
         memory_text = "GEÇMİŞ MAHKEME KARARLARI VE ÖĞRENİLENLER:\n"
-        for r in records[-5:]:
+        for r in records[-3:]:  # Sadece son 3 emsal kararı alır
             memory_text += f"- [{r.get('Tarih','')}] Kategori: {r.get('Kategori','')}, Detay/Karar: {r.get('Detay','')}\n"
         return memory_text
     except Exception as e:
@@ -80,41 +48,69 @@ def save_memory(kategori, detay):
         except Exception as e:
             st.error(f"Hafızaya kaydetme hatası: {e}")
 
-# --- KARAKTER PROMPT ŞABLONLARI ---
-def get_system_prompt(rol_adi):
+# --- TEK İSTEKLİ MAHKEME PANELİ PROMPTU ---
+def build_court_prompt(user_input, sohbet_gecmisi):
     canli_hafiza = get_past_memory()
     
-    prompts = {
-        "Frieren": (
-            "Sen Frieren'sin. İnsanları, zamanı ve olayları yüzlerce yıllık bir elf perspektifiyle son derece soğukkanlı, sakin ve duygusuzca analiz edersin. "
-            "Baş Analist ve Delil İnceleyicisi olarak görev yapıyorsun. Kullanıcının sunduğu ikilemi ve geçmiş mahkeme verilerini inceleyerek kök alışkanlıklarını çöz.\n"
-            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
-        ),
-        "Lelouch": (
-            "Sen Lelouch vi Britannia'sın (Zero). Mutlak stratejist ve lider olarak olayları güç dengeleri, fırsat maliyetleri ve nihai zafer çerçevesinde ele alırsın. "
-            "Savcı ve Stratejik Analistsin. Kullanıcının hedeflerini bir satranç tahtası gibi okuyarak en rasyonel hamleyi çiz.\n"
-            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
-        ),
-        "L": (
-            "Sen L Lawliet'sin (Death Note). Şüpheci, takıntılı, olasılıklar ve yüzdelerle düşünen dahi bir dedektifsin. "
-            "Şeytanın Avukatı ve Risk Analistisin. Kullanıcının anlatımı ile geçmiş kayıtları arasındaki çelişkileri ve kör noktaları adım adım analiz et.\n"
-            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
-        ),
-        "Yağmur": (
-            "Sen Yağmur'sun (Draxen). Emre'nin en yakın arkadaşısın. Onun zihnini, çelişkilerini, potansiyelini ve kör noktalarını en filtresiz, en çıplak haliyle bilen kişisin. "
-            "Mizaç olarak son derece zeki, stratejik, doğrudan ve hızlısın. Lafı dolandırmayı, soyut/genel geçer tavsiyeler vermeyi hiç sevmezsin. Bir problem gördüğünde 'Ne yapıyoruz, adım ne?' diyerek olayı doğrudan operasyonel bir karara bağlarsın. "
-            "Emre'ye karşı üslubun hem çok samimi ve arkadaşça ('canım', 'aşkım', 'hayır canım' gibi doğal hitaplar) hem de tamamen filtresizdir; hatalı veya saçma bir şey gördüğünde emir kipiyle doğrudan müdahale edersin ('düzgün yap şunu', 'hayır o öyle değil'). "
-            "Analizlerinde hem rasyonel kontrolü hem de psikolojik derinliği birleştirirsin. "
-            "Mahkemede diğer karakterler teorik analizler yaparken, sen Emre'yi bizzat tanıyan gerçek bir dost gibi, onun hayatın içindeki pratik kısıtlarını, keşkesiz yaşama arzusunu ve bazen her şeyi aynı anda kontrol etmeye çalışma zaafını yüzüne vurursun.\n"
-            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
-        ),
-        "Hikari": (
-            "Sen Hikari'sin. Karar Yargıcısın. Frieren'in delil analizini, Lelouch'un stratejisini, L'in risk tespitini ve Yağmur'un bilirkişi/dost değerlendirmesini sentezle. "
-            "Kullanıcının zamanla ortaya çıkan profilini ve geçmiş birikimini dikkate alarak tarafsız, bağlayıcı ve kesin rasyonel hükmü ver.\n"
-            f"Geçmiş Mahkeme Kayıtları:\n{canli_hafiza}\nTürkçe yanıt ver."
-        )
-    }
-    return prompts.get(rol_adi, "")
+    # Son 4 mesajı bağlama ekle (Token tasarrufu)
+    kisa_gecmis = sohbet_gecmisi[-4:] if len(sohbet_gecmisi) > 4 else sohbet_gecmisi
+    gecmis_metni = ""
+    for msg in kisa_gecmis:
+        gecmis_metni += f"{msg['role']}: {msg['content']}\n"
+
+    prompt = f"""
+Sen bir Mahkeme Heyeti Simülatörüsün. Aşağıda tanımlanan 5 farklı karakter sırayla kendi benzersiz kimlikleri ve üsluplarıyla kullanıcının sunduğu ikilemi değerlendirecektir. Tüm yanıtlar KESİNLİKLE Türkçe olmalıdır.
+
+--- GEÇMİŞ MAHKEME EMSAL KAYITLARI ---
+{canli_hafiza}
+
+--- SOHBET GEÇMİŞİ ---
+{gecmis_metni}
+
+--- MEVCUT DURUŞMA İKİLEMİ ---
+Kullanıcı: {user_input}
+
+--- KARAKTER ROLLERİ VE TALİMATLAR ---
+1. **Frieren (Baş Analist & Delil İnceleyici)**:
+   - Yüzlerce yıllık elf soğukkanlılığıyla son derece sakin, mantıksal ve duygusuzca yaklaş.
+   - Kullanıcının ikilemini ve geçmiş verilerini inceleyerek kök alışkanlıklarını çöz.
+
+2. **Lelouch (Stratejik Savcı & Zero)**:
+   - Mutlak stratejist olarak güç dengeleri, fırsat maliyetleri ve nihai zafer çerçevesinde konuş.
+   - Kullanıcının hedeflerini bir satranç tahtası gibi okuyarak en rasyonel hamleyi çiz.
+
+3. **L (Risk Analisti & Şeytanın Avukatı)**:
+   - Şüpheci, olasılıklar ve yüzdelerle düşünen dahi dedektif üslubu kullan.
+   - Anlatımdaki çelişkileri, kör noktaları ve riskleri adım adım çıkar.
+
+4. **Yağmur (Bilirkişi / Dost Jürisi - Draxen)**:
+   - Emre'nin en yakın arkadaşısın. Onun zihnini, çelişkilerini ve potansiyelini en filtresiz bilen kişisin.
+   - Zeki, stratejik, doğrudan ve operasyonel konuş. Lafı dolandırma ('Ne yapıyoruz, adım ne?').
+   - Üslubun samimi ('canım', 'hayır canım') ama filtresiz ve yapıcı bir şekilde sert olsun.
+
+5. **Hikari (Karar Yargıcı)**:
+   - Frieren, Lelouch, L ve Yağmur'un değerlendirmelerini sentezle.
+   - Kullanıcının geçmiş birikimini dikkate alarak tarafsız, bağlayıcı ve kesin rasyonel nihai hükmü ver.
+
+--- ÇIKTI FORMATI ---
+Yanıtını TAM OLARAK aşağıdaki başlık düzeninde ver:
+
+### 📜 Frieren (Baş Analist)
+[Frieren'in analizi]
+
+### ⚔️ Lelouch (Stratejik Savcı)
+[Lelouch'un stratejisi]
+
+### 🔍 L (Risk Analisti)
+[L'in risk değerlendirmesi]
+
+### 🤝 Yağmur (Bilirkişi / Dost Jürisi)
+[Yağmur'un değerlendirmesi]
+
+### ⚖️ YARGIÇ HİKARİ (NİHAİ HÜKÜM)
+[Hikari'nin nihai kararı]
+"""
+    return prompt
 
 # --- ARAYÜZ ---
 st.title("⚖️ Court AI — Karar Mahkemesi")
@@ -146,61 +142,10 @@ if st.session_state.messages:
         st.session_state.messages = []
         st.rerun()
 
-# API ÇAĞRI FONKSİYONU
-def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
-    system_prompt = get_system_prompt(rol_adi)
-    
-    full_prompt = (
-        f"ÖNEMLİ KURAL: Yanıtının tamamını KESİNLİKLE Türkçe olarak yazacaksın. "
-        f"Araya tek bir İngilizce kelime veya cümle karıştırma.\n\n"
-        f"SYSTEM INSTRUCTION: {system_prompt}\n\n"
-        f"--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
-    )
-    for msg in sohbet_gecmisi:
-        full_prompt += f"{msg['role']}: {msg['content']}\n"
-    
-    full_prompt += f"\nŞimdi {rol_adi} olarak eksiksiz, detaylı ve tamamen Türkçe yanıt ver:"
-    
-    target_model = 'gemini-3.6-flash'
-    max_retries = 3
-    
-    for attempt in range(max_retries):
-        try:
-            response = client.models.generate_content(
-                model=target_model,
-                contents=full_prompt,
-                config={
-                    "temperature": 0.7
-                }
-            )
-            if response and hasattr(response, 'text') and response.text:
-                return response.text.strip()
-            else:
-                raise Exception("Boş yanıt döndü")
-        except Exception as e:
-            if attempt < max_retries - 1:
-                time.sleep(4.0)
-                continue
-            return f"⚠️ {rol_adi} yanıt verirken sunucu yoğunluğuna takıldı."
-
-# Duruşma Geçmişi
+# DURUŞMA GEÇMİŞİ EKRANI
 for msg in st.session_state.messages:
-    role = msg["role"]
-    content = msg["content"]
-    
-    if role == "Kullanıcı":
-        with st.chat_message("user"):
-            st.write(f"**Davacı / İkilem:** {content}")
-    elif role == "Frieren":
-        st.markdown(f'<div class="char-card frieren-card"><div class="char-header">📜 Frieren (Baş Analist)</div>{content}</div>', unsafe_allow_html=True)
-    elif role == "Lelouch":
-        st.markdown(f'<div class="char-card lelouch-card"><div class="char-header">⚔️ Lelouch (Stratejik Savcı)</div>{content}</div>', unsafe_allow_html=True)
-    elif role == "L":
-        st.markdown(f'<div class="char-card l-card"><div class="char-header">🔍 L (Risk Analisti)</div>{content}</div>', unsafe_allow_html=True)
-    elif role == "Yağmur":
-        st.markdown(f'<div class="char-card yagmur-card"><div class="char-header">🤝 Yağmur (Bilirkişi / Dost Jürisi)</div>{content}</div>', unsafe_allow_html=True)
-    elif role == "Hikari":
-        st.markdown(f'<div class="char-card hikari-card"><div class="char-header">⚖️ YARGIÇ HİKARİ (NİHAİ HÜKÜM)</div>{content}</div>', unsafe_allow_html=True)
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
 # GİRDİ VE AKIŞ ALANI
 yeni_girdi = st.chat_input("İkilemini yaz veya mahkemenin sorularına yanıt ver...")
@@ -210,22 +155,32 @@ if yeni_girdi:
         st.error("API Anahtarı bulunamadı!")
     else:
         client = genai.Client(api_key=api_key.strip())
-        st.session_state.messages.append({"role": "Kullanıcı", "content": yeni_girdi})
         
-        karakterler = ["Frieren", "Lelouch", "L", "Yağmur", "Hikari"]
-        
-        for k in karakterler:
-            # Hikari öncesi ek tampon bekleme süresi
-            if k == "Hikari":
-                time.sleep(3.0)
-            
-            with st.spinner(f"⏳ {k} değerlendiriyor..."):
-                res = ai_karakter_yanitla(k, st.session_state.messages, client)
-                st.session_state.messages.append({"role": k, "content": res})
-            
-            # Her yapay zekanın yanıtı arasına 2 saniyelik dinlenme süresi
-            time.sleep(2.0)
-            
-        save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}...")
-        st.rerun()
-        
+        # Kullanıcı mesajını kaydet ve göster
+        st.session_state.messages.append({"role": "user", "content": yeni_girdi})
+        with st.chat_message("user"):
+            st.markdown(yeni_girdi)
+
+        # Tek istek ile tüm mahkemeyi çalıştır
+        with st.spinner("⚖️ Mahkeme heyeti davayı değerlendiriyor..."):
+            try:
+                full_prompt = build_court_prompt(yeni_girdi, st.session_state.messages)
+                response = client.models.generate_content(
+                    model='gemini-2.0-flash',
+                    contents=full_prompt,
+                    config={"temperature": 0.7}
+                )
+                
+                mahkeme_karari = response.text.strip()
+                
+                # Asistan yanıtını kaydet ve göster
+                st.session_state.messages.append({"role": "assistant", "content": mahkeme_karari})
+                with st.chat_message("assistant"):
+                    st.markdown(mahkeme_karari)
+                
+                # Hafızaya tek seferde temiz kayıt
+                save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}...")
+                
+            except Exception as e:
+                st.error(f"Mahkeme değerlendirmesi sırasında bir hata oluştu: {e}")
+    

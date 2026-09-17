@@ -10,7 +10,7 @@ st.set_page_config(page_title="Court AI — Karar Mahkemesi", page_icon="⚖️"
 
 st.markdown("""
 <style>
-    /* Mahkeme Kartları - Yüksek Kontrastlı & Göz Yormayan Pastel / Dark Tema */
+    /* Mahkeme Kartları - Dark Tema */
     .char-card {
         padding: 16px 20px;
         border-radius: 12px;
@@ -21,40 +21,11 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
     }
     
-    /* Frieren: Buz Mavisi / İndigo Tone */
-    .frieren-card { 
-        background-color: #1e2630; 
-        border-color: #64b5f6; 
-        color: #e3f2fd; 
-    }
-    
-    /* Lelouch: Mürdüm / Bordo Tone */
-    .lelouch-card { 
-        background-color: #2a1824; 
-        border-color: #ec407a; 
-        color: #fce4ec; 
-    }
-    
-    /* L: Kömür / Minimal Slate Tone */
-    .l-card { 
-        background-color: #212121; 
-        border-color: #b0bec5; 
-        color: #eceff1; 
-    }
-    
-    /* Yağmur: Derin Mor / Lavanta Tone */
-    .yagmur-card { 
-        background-color: #261c33; 
-        border-color: #ab47bc; 
-        color: #f3e5f5; 
-    }
-    
-    /* Hikari: Sıcak Kehribar / Altın Tone */
-    .hikari-card { 
-        background-color: #2d2615; 
-        border-color: #ffee58; 
-        color: #fffde7; 
-    }
+    .frieren-card { background-color: #1e2630; border-color: #64b5f6; color: #e3f2fd; }
+    .lelouch-card { background-color: #2a1824; border-color: #ec407a; color: #fce4ec; }
+    .l-card { background-color: #212121; border-color: #b0bec5; color: #eceff1; }
+    .yagmur-card { background-color: #261c33; border-color: #ab47bc; color: #f3e5f5; }
+    .hikari-card { background-color: #2d2615; border-color: #ffee58; color: #fffde7; }
     
     .char-header {
         font-weight: 700;
@@ -79,7 +50,7 @@ def get_gspread_sheet():
         client = gspread.authorize(credentials)
         sheet = client.open("Court_AI_Memory").sheet1
         return sheet
-    except Exception as e:
+    except Exception:
         return None
 
 def get_past_memory():
@@ -156,7 +127,7 @@ if not api_key:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# SIDEBAR (Mahkeme Bilgi Paneli)
+# SIDEBAR
 st.sidebar.header("🏛️ Mahkeme Heyeti")
 st.sidebar.markdown("""
 * 📜 **Frieren**: Baş Analist
@@ -175,7 +146,7 @@ if st.session_state.messages:
         st.session_state.messages = []
         st.rerun()
 
-# API ÇAĞRI FONKSİYONU (Yalnızca gemini-3.6-flash & Sonsuz Tekrar Döngüsü)
+# Akıllı Retry & Akış Kontrolü Fonksiyonu
 def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = get_system_prompt(rol_adi)
     full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
@@ -184,24 +155,32 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     full_prompt += f"\nŞimdi {rol_adi} olarak yanıt ver:"
     
     target_model = 'gemini-3.6-flash'
+    max_retries = 3
     
-    while True:
+    for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
                 model=target_model,
-                contents=full_prompt
+                contents=full_prompt,
+                config={
+                    "temperature": 0.7,
+                    "max_output_tokens": 600
+                }
             )
             return response.text.strip()
         except Exception as e:
             err_str = str(e)
-            # 503, UNAVAILABLE, 429 veya geçici sunucu yoğunluğu hatalarında pes etmeden 1.5 sn bekle ve tekrar dene
             if any(err in err_str for err in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]):
-                time.sleep(1.5)
-                continue
-            else:
-                return f"API Hatası ({target_model}): {e}"
+                if attempt < max_retries - 1:
+                    # Sunucu yoğunluğunda senin dediğin gibi tam 4 saniye bekle ve tekrar dene
+                    st.toast(f"⏳ {rol_adi} için sunucu meşgul, 4 saniye beklenip tekrar deneniyor... ({attempt+1}/{max_retries})")
+                    time.sleep(4.0)
+                    continue
+            return f"⚠️ {rol_adi} analiz yaparken yoğunluğa takıldı, duruşmaya devam ediliyor."
+            
+    return f"⚠️ {rol_adi} yanıt veremedi."
 
-# Duruşma Akışı ve Karakter Kartlarını Ekrana Bastırma
+# Duruşma Geçmişi
 for msg in st.session_state.messages:
     role = msg["role"]
     content = msg["content"]
@@ -220,7 +199,7 @@ for msg in st.session_state.messages:
     elif role == "Hikari":
         st.markdown(f'<div class="char-card hikari-card"><div class="char-header">⚖️ YARGIÇ HİKARİ (NİHAİ HÜKÜM)</div>{content}</div>', unsafe_allow_html=True)
 
-# GİRDİ ALANI
+# GİRDİ VE SIRALI AKIŞ ALANI
 yeni_girdi = st.chat_input("İkilemini yaz veya mahkemenin sorularına yanıt ver...")
 
 if yeni_girdi:
@@ -230,26 +209,31 @@ if yeni_girdi:
         client = genai.Client(api_key=api_key.strip())
         st.session_state.messages.append({"role": "Kullanıcı", "content": yeni_girdi})
         
+        # 1. Frieren
         with st.spinner("📜 Frieren delilleri inceliyor..."):
             f_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Frieren", "content": f_res})
-        time.sleep(1.0)
+        time.sleep(1.5) # API'yi rahatlatmak için tampon bekleme
         
+        # 2. Lelouch
         with st.spinner("⚔️ Lelouch stratejiyi hesaplıyor..."):
             l_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Lelouch", "content": l_res})
-        time.sleep(1.0)
+        time.sleep(1.5)
 
-        with st.spinner("🔍 L riskleri ve çelişkileri tarıyor..."):
+        # 3. L
+        with st.spinner("🔍 L riskleri tarıyor..."):
             l_law_res = ai_karakter_yanitla("L", st.session_state.messages, client)
             st.session_state.messages.append({"role": "L", "content": l_law_res})
-        time.sleep(1.0)
+        time.sleep(1.5)
         
+        # 4. Yağmur
         with st.spinner("🤝 Yağmur durumu değerlendiriyor..."):
             y_res = ai_karakter_yanitla("Yağmur", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Yağmur", "content": y_res})
-        time.sleep(1.0)
+        time.sleep(1.5)
 
+        # 5. Hikari
         with st.spinner("⚖️ Yargıç Hikari hükmü açıklıyor..."):
             h_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
             st.session_state.messages.append({"role": "Hikari", "content": h_res})
@@ -258,4 +242,3 @@ if yeni_girdi:
             save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}... -> Hüküm: {h_res[:120]}...")
         
         st.rerun()
-                

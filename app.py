@@ -31,7 +31,7 @@ def get_past_memory():
             return "Geçmiş kayıt bulunmuyor."
         
         memory_text = "GEÇMİŞ MAHKEME KARARLARI VE ÖĞRENİLENLER:\n"
-        for r in records[-3:]:  # Sadece son 3 emsal kararı alır
+        for r in records[-3:]:
             memory_text += f"- [{r.get('Tarih','')}] Kategori: {r.get('Kategori','')}, Detay/Karar: {r.get('Detay','')}\n"
         return memory_text
     except Exception as e:
@@ -52,14 +52,15 @@ def save_memory(kategori, detay):
 def build_court_prompt(user_input, sohbet_gecmisi):
     canli_hafiza = get_past_memory()
     
-    # Son 4 mesajı bağlama ekle (Token tasarrufu)
     kisa_gecmis = sohbet_gecmisi[-4:] if len(sohbet_gecmisi) > 4 else sohbet_gecmisi
     gecmis_metni = ""
     for msg in kisa_gecmis:
         gecmis_metni += f"{msg['role']}: {msg['content']}\n"
 
     prompt = f"""
-Sen bir Mahkeme Heyeti Simülatörüsün. Aşağıda tanımlanan 5 farklı karakter sırayla kendi benzersiz kimlikleri ve üsluplarıyla kullanıcının sunduğu ikilemi değerlendirecektir. Tüm yanıtlar KESİNLİKLE Türkçe olmalıdır.
+ÖNEMLİ KURAL: Bütün karakterlerin yanıtları KESİNLİKLE Türkçe olacaktır. Araya İngilizce kelime karıştırma.
+
+Sen bir Mahkeme Heyeti Simülatörüsün. Aşağıda tanımlanan 5 farklı karakter sırayla kendi benzersiz kimlikleri ve üsluplarıyla kullanıcının sunduğu ikilemi değerlendirecektir.
 
 --- GEÇMİŞ MAHKEME EMSAL KAYITLARI ---
 {canli_hafiza}
@@ -156,31 +157,29 @@ if yeni_girdi:
     else:
         client = genai.Client(api_key=api_key.strip())
         
-        # Kullanıcı mesajını kaydet ve göster
         st.session_state.messages.append({"role": "user", "content": yeni_girdi})
         with st.chat_message("user"):
             st.markdown(yeni_girdi)
 
-        # Tek istek ile tüm mahkemeyi çalıştır
         with st.spinner("⚖️ Mahkeme heyeti davayı değerlendiriyor..."):
             try:
                 full_prompt = build_court_prompt(yeni_girdi, st.session_state.messages)
+                
+                # Sadece gemini-3.6-flash kullanılıyor
                 response = client.models.generate_content(
-                    model='gemini-2.0-flash',
+                    model='gemini-3.6-flash',
                     contents=full_prompt,
                     config={"temperature": 0.7}
                 )
                 
                 mahkeme_karari = response.text.strip()
                 
-                # Asistan yanıtını kaydet ve göster
                 st.session_state.messages.append({"role": "assistant", "content": mahkeme_karari})
                 with st.chat_message("assistant"):
                     st.markdown(mahkeme_karari)
                 
-                # Hafızaya tek seferde temiz kayıt
                 save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}...")
                 
             except Exception as e:
                 st.error(f"Mahkeme değerlendirmesi sırasında bir hata oluştu: {e}")
-    
+                

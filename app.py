@@ -146,39 +146,42 @@ if st.session_state.messages:
         st.session_state.messages = []
         st.rerun()
 
-# Akıllı Retry & Akış Kontrolü Fonksiyonu
+# API ÇAĞRI FONKSİYONU (Sınırsız Token & Kesin Türkçe Zorlaması)
 def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = get_system_prompt(rol_adi)
-    full_prompt = f"SYSTEM INSTRUCTION: {system_prompt}\n\n--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
+    
+    full_prompt = (
+        f"ÖNEMLİ KURAL: Yanıtının tamamını KESİNLİKLE Türkçe olarak yazacaksın. "
+        f"Araya tek bir İngilizce kelime veya cümle karıştırma.\n\n"
+        f"SYSTEM INSTRUCTION: {system_prompt}\n\n"
+        f"--- SOHBET GEÇMİŞİ VE MAHKEME SÜRECİ ---\n"
+    )
     for msg in sohbet_gecmisi:
         full_prompt += f"{msg['role']}: {msg['content']}\n"
-    full_prompt += f"\nŞimdi {rol_adi} olarak yanıt ver:"
     
+    full_prompt += f"\nŞimdi {rol_adi} olarak eksiksiz, detaylı ve tamamen Türkçe yanıt ver:"
+    
+    # Doğrudan Gemini 3.6 Flash modeli tanımlandı
     target_model = 'gemini-3.6-flash'
-    max_retries = 3
     
-    for attempt in range(max_retries):
+    for attempt in range(2):
         try:
             response = client.models.generate_content(
                 model=target_model,
                 contents=full_prompt,
                 config={
-                    "temperature": 0.7,
-                    "max_output_tokens": 600
+                    "temperature": 0.7
                 }
             )
-            return response.text.strip()
+            if response and hasattr(response, 'text') and response.text:
+                return response.text.strip()
+            else:
+                raise Exception("Boş yanıt döndü")
         except Exception as e:
-            err_str = str(e)
-            if any(err in err_str for err in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED"]):
-                if attempt < max_retries - 1:
-                    # Sunucu yoğunluğunda senin dediğin gibi tam 4 saniye bekle ve tekrar dene
-                    st.toast(f"⏳ {rol_adi} için sunucu meşgul, 4 saniye beklenip tekrar deneniyor... ({attempt+1}/{max_retries})")
-                    time.sleep(4.0)
-                    continue
-            return f"⚠️ {rol_adi} analiz yaparken yoğunluğa takıldı, duruşmaya devam ediliyor."
-            
-    return f"⚠️ {rol_adi} yanıt veremedi."
+            if attempt == 0:
+                time.sleep(3.0)
+                continue
+            return f"⚠️ {rol_adi} yanıt verirken sunucu yoğunluğuna takıldı."
 
 # Duruşma Geçmişi
 for msg in st.session_state.messages:
@@ -199,7 +202,7 @@ for msg in st.session_state.messages:
     elif role == "Hikari":
         st.markdown(f'<div class="char-card hikari-card"><div class="char-header">⚖️ YARGIÇ HİKARİ (NİHAİ HÜKÜM)</div>{content}</div>', unsafe_allow_html=True)
 
-# GİRDİ VE SIRALI AKIŞ ALANI
+# GİRDİ VE AKIŞ ALANI
 yeni_girdi = st.chat_input("İkilemini yaz veya mahkemenin sorularına yanıt ver...")
 
 if yeni_girdi:
@@ -209,36 +212,14 @@ if yeni_girdi:
         client = genai.Client(api_key=api_key.strip())
         st.session_state.messages.append({"role": "Kullanıcı", "content": yeni_girdi})
         
-        # 1. Frieren
-        with st.spinner("📜 Frieren delilleri inceliyor..."):
-            f_res = ai_karakter_yanitla("Frieren", st.session_state.messages, client)
-            st.session_state.messages.append({"role": "Frieren", "content": f_res})
-        time.sleep(1.5) # API'yi rahatlatmak için tampon bekleme
+        karakterler = ["Frieren", "Lelouch", "L", "Yağmur", "Hikari"]
         
-        # 2. Lelouch
-        with st.spinner("⚔️ Lelouch stratejiyi hesaplıyor..."):
-            l_res = ai_karakter_yanitla("Lelouch", st.session_state.messages, client)
-            st.session_state.messages.append({"role": "Lelouch", "content": l_res})
-        time.sleep(1.5)
-
-        # 3. L
-        with st.spinner("🔍 L riskleri tarıyor..."):
-            l_law_res = ai_karakter_yanitla("L", st.session_state.messages, client)
-            st.session_state.messages.append({"role": "L", "content": l_law_res})
-        time.sleep(1.5)
-        
-        # 4. Yağmur
-        with st.spinner("🤝 Yağmur durumu değerlendiriyor..."):
-            y_res = ai_karakter_yanitla("Yağmur", st.session_state.messages, client)
-            st.session_state.messages.append({"role": "Yağmur", "content": y_res})
-        time.sleep(1.5)
-
-        # 5. Hikari
-        with st.spinner("⚖️ Yargıç Hikari hükmü açıklıyor..."):
-            h_res = ai_karakter_yanitla("Hikari", st.session_state.messages, client)
-            st.session_state.messages.append({"role": "Hikari", "content": h_res})
+        for k in karakterler:
+            with st.spinner(f"⏳ {k} değerlendiriyor..."):
+                res = ai_karakter_yanitla(k, st.session_state.messages, client)
+                st.session_state.messages.append({"role": k, "content": res})
+            time.sleep(1.5)
             
-            # Hafızaya kaydet
-            save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}... -> Hüküm: {h_res[:120]}...")
-        
+        save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}...")
         st.rerun()
+    

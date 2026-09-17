@@ -146,7 +146,7 @@ if st.session_state.messages:
         st.session_state.messages = []
         st.rerun()
 
-# API ÇAĞRI FONKSİYONU (Sınırsız Token & Kesin Türkçe Zorlaması)
+# API ÇAĞRI FONKSİYONU
 def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     system_prompt = get_system_prompt(rol_adi)
     
@@ -161,10 +161,10 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
     
     full_prompt += f"\nŞimdi {rol_adi} olarak eksiksiz, detaylı ve tamamen Türkçe yanıt ver:"
     
-    # Doğrudan Gemini 3.6 Flash modeli tanımlandı
     target_model = 'gemini-3.6-flash'
+    max_retries = 3
     
-    for attempt in range(2):
+    for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
                 model=target_model,
@@ -178,8 +178,8 @@ def ai_karakter_yanitla(rol_adi, sohbet_gecmisi, client):
             else:
                 raise Exception("Boş yanıt döndü")
         except Exception as e:
-            if attempt == 0:
-                time.sleep(3.0)
+            if attempt < max_retries - 1:
+                time.sleep(4.0)
                 continue
             return f"⚠️ {rol_adi} yanıt verirken sunucu yoğunluğuna takıldı."
 
@@ -215,11 +215,17 @@ if yeni_girdi:
         karakterler = ["Frieren", "Lelouch", "L", "Yağmur", "Hikari"]
         
         for k in karakterler:
+            # Hikari öncesi ek tampon bekleme süresi
+            if k == "Hikari":
+                time.sleep(3.0)
+            
             with st.spinner(f"⏳ {k} değerlendiriyor..."):
                 res = ai_karakter_yanitla(k, st.session_state.messages, client)
                 st.session_state.messages.append({"role": k, "content": res})
-            time.sleep(1.5)
+            
+            # Her yapay zekanın yanıtı arasına 2 saniyelik dinlenme süresi
+            time.sleep(2.0)
             
         save_memory("Karar/Dava", f"Konu: {yeni_girdi[:60]}...")
         st.rerun()
-    
+        

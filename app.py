@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 
 # --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Court AI — Adım Adım Duruşma", page_icon="⚖️", layout="centered")
+st.set_page_config(page_title="Court AI — Serbest Karakter Mahkemesi", page_icon="⚖️", layout="centered")
 
 # --- GOOGLE SHEETS CANLI BAĞLANTISI ---
 def get_gspread_sheet():
@@ -48,7 +48,32 @@ def save_memory(kategori, detay):
         except Exception as e:
             st.error(f"Hafızaya kaydetme hatası: {e}")
 
-# --- TEK TEK KARAKTER PROMPT OLUŞTURUCU ---
+# --- KARAKTER RENKLİ RENDERER ---
+def render_character_message(role, content):
+    if role == "user":
+        st.chat_message("user").markdown(content)
+    elif role == "Frieren":
+        st.info(f"### 📜 Frieren (Baş Analist)\n\n{content}")
+    elif role == "Lelouch":
+        st.error(f"### ⚔️ Lelouch (Stratejik Savcı)\n\n{content}")
+    elif role == "L":
+        st.warning(f"### 🔍 L (Risk Analisti)\n\n{content}")
+    elif role == "Yağmur":
+        st.success(f"### 🤝 Yağmur (Bilirkişi / Dost Jürisi)\n\n{content}")
+    elif role == "Hikari":
+        st.markdown(
+            f"""
+            <div style="background-color: #2b260e; padding: 15px; border-radius: 10px; border-left: 5px solid #ffd700; margin-bottom: 10px;">
+                <h3 style="color: #ffd700; margin-top:0;">⚖️ YARGIÇ HİKARİ (NİHAİ HÜKÜM)</h3>
+                <p style="color: #f0f0f0;">{content.replace('\n', '<br>')}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(content)
+
+# --- PROMPT OLUŞTURUCU ---
 def get_single_character_prompt(rol_adi, user_input, sohbet_gecmisi):
     canli_hafiza = get_past_memory()
     
@@ -103,32 +128,35 @@ Mevcut İkilem / Konu: {user_input}
     return full_prompt
 
 # --- ARAYÜZ VE DURUM YÖNETİMİ ---
-st.title("⚖️ Court AI — Adım Adım Duruşma")
-st.caption("Sıralı Mahkeme Akışı")
-
-api_key = st.secrets.get("GEMINI_API_KEY", "")
-if not api_key:
-    api_key = st.sidebar.text_input("Gemini API Key Girin:", type="password")
+st.title("⚖️ Court AI — Karar Mahkemesi")
+st.caption("Dilediğin Karakteri Seç ve Konuştur")
 
 # SESSION STATE TANIMLARI
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "current_step" not in st.session_state:
-    st.session_state.current_step = 0  # 0: Bekliyor, 1: Frieren, 2: Lelouch, 3: L, 4: Yağmur, 5: Hikari
 if "active_dava" not in st.session_state:
     st.session_state.active_dava = ""
 
-KARAKTER_LISTESI = ["Frieren", "Lelouch", "L", "Yağmur", "Hikari"]
+# --- SIDEBAR (YAN MENÜ) ---
+st.sidebar.header("🔑 API Anahtarı Yönetimi")
+default_key = st.secrets.get("GEMINI_API_KEY", "")
+api_key_input = st.sidebar.text_input("Gemini API Key:", value=default_key, type="password", help="Kota dolduğunda buradan yeni key girebilirsin.")
 
-# SIDEBAR
-st.sidebar.header("🏛️ Mahkeme Heyeti")
-st.sidebar.markdown("""
-1. 📜 **Frieren**: Baş Analist
-2. ⚔️ **Lelouch**: Stratejik Savcı
-3. 🔍 **L**: Risk Analisti
-4. 🤝 **Yağmur**: Bilirkişi / Dost Jürisi
-5. ⚖️ **Hikari**: Karar Yargıcı
-""")
+st.sidebar.markdown("---")
+st.sidebar.header("🏛️ Söz Hakkı Verilecek Karakter")
+
+# DİNAMİK KARAKTER SEÇİMİ (Radio Button)
+secilen_karakter = st.sidebar.radio(
+    "Konuşmasını istediğin kişiyi seç:",
+    ["Frieren", "Lelouch", "L", "Yağmur", "Hikari"],
+    format_func=lambda x: {
+        "Frieren": "📜 Frieren (Baş Analist)",
+        "Lelouch": "⚔️ Lelouch (Stratejik Savcı)",
+        "L": "🔍 L (Risk Analisti)",
+        "Yağmur": "🤝 Yağmur (Bilirkişi / Dost Jürisi)",
+        "Hikari": "⚖️ Hikari (Karar Yargıcı)"
+    }[x]
+)
 
 st.sidebar.markdown("---")
 if st.sidebar.button("📜 Canlı Hafızayı Göster"):
@@ -136,65 +164,59 @@ if st.sidebar.button("📜 Canlı Hafızayı Göster"):
 
 if st.sidebar.button("🗑️ Davayı Kapat / Yeni Dava"):
     st.session_state.messages = []
-    st.session_state.current_step = 0
     st.session_state.active_dava = ""
     st.rerun()
 
-# GEÇMİŞ MESAJLARI EKRANA YAZDIR
+# GEÇMİŞ MESAJLARI RENKLİ YAZDIR
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+    render_character_message(msg["role"], msg["content"])
 
-# YENİ DAVA BAŞLATMA ALANI
-if st.session_state.current_step == 0:
-    yeni_girdi = st.chat_input("İkilemini yazarak duruşmayı başlat...")
+# İKİLEM GİRDİSİ VE BUTON ALANI
+if not st.session_state.active_dava:
+    yeni_girdi = st.chat_input("İkilemini veya konuyu yazarak mahkemeyi başlat...")
     if yeni_girdi:
-        if not api_key.strip():
-            st.error("API Anahtarı bulunamadı!")
-        else:
-            st.session_state.active_dava = yeni_girdi
-            st.session_state.messages.append({"role": "user", "content": yeni_girdi})
-            st.session_state.current_step = 1  # Frieren'e geç
-            st.rerun()
+        st.session_state.active_dava = yeni_girdi
+        st.session_state.messages.append({"role": "user", "content": yeni_girdi})
+        st.rerun()
+else:
+    # Kullanıcı dava açtıktan sonra seçili karakteri konuşturma butonu
+    st.markdown(f"**Şu an konuşmaya hazır:** `{secilen_karakter}`")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        if st.button(f"🎙️ {secilen_karakter} Yanıt Versin", type="primary", use_container_width=True):
+            if not api_key_input.strip():
+                st.error("Lütfen yan menüden geçerli bir Gemini API Key girin!")
+            else:
+                client = genai.Client(api_key=api_key_input.strip())
+                
+                with st.spinner(f"⚖️ {secilen_karakter} değerlendirmesini yapıyor..."):
+                    try:
+                        prompt = get_single_character_prompt(secilen_karakter, st.session_state.active_dava, st.session_state.messages)
+                        
+                        # Sadece ve sadece gemini-3.6-flash
+                        response = client.models.generate_content(
+                            model='gemini-3.6-flash',
+                            contents=prompt,
+                            config={"temperature": 0.7}
+                        )
+                        
+                        res_text = response.text.strip()
+                        
+                        st.session_state.messages.append({"role": secilen_karakter, "content": res_text})
+                        
+                        # Eğer Hikari seçilip yanıt verdiyse otomatik hafızaya kaydet
+                        if secilen_karakter == "Hikari":
+                            save_memory("Karar/Dava", f"Konu: {st.session_state.active_dava[:60]}...")
+                        
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"{secilen_karakter} yanıt verirken hata oluştu: {e}")
 
-# ADIM ADIM İLERLEME MEKANİZMASI
-if 1 <= st.session_state.current_step <= 5:
-    current_char = KARAKTER_LISTESI[st.session_state.current_step - 1]
-    
-    # Eğer bu karakter henüz yanıt vermediyse buton göster
-    button_label = f"🎙️ {current_char} Söz Alsın"
-    
-    if st.button(button_label, type="primary"):
-        client = genai.Client(api_key=api_key.strip())
+    # Ara soru / cevap yazma alanı
+    ara_girdi = st.chat_input("Mahkemeye ek açıklama yap veya soru sor...")
+    if ara_girdi:
+        st.session_state.messages.append({"role": "user", "content": ara_girdi})
+        st.rerun()
         
-        with st.spinner(f"⚖️ {current_char} değerlendirmesini yapıyor..."):
-            try:
-                prompt = get_single_character_prompt(current_char, st.session_state.active_dava, st.session_state.messages)
-                
-                # Sadece gemini-3.6-flash
-                response = client.models.generate_content(
-                    model='gemini-3.6-flash',
-                    contents=prompt,
-                    config={"temperature": 0.7}
-                )
-                
-                res_text = response.text.strip()
-                formatted_res = f"### {current_char}\n{res_text}"
-                
-                st.session_state.messages.append({"role": current_char, "content": formatted_res})
-                
-                # Hikari yanıt verdiyse davayı kapat ve hafızaya kaydet
-                if current_char == "Hikari":
-                    save_memory("Karar/Dava", f"Konu: {st.session_state.active_dava[:60]}...")
-                    st.session_state.current_step = 6 # Duruşma bitti
-                else:
-                    st.session_state.current_step += 1 # Sonraki karaktere geç
-                
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"{current_char} yanıt verirken hata oluştu: {e}")
-
-if st.session_state.current_step == 6:
-    st.success("🏛️ Duruşma tamamlandı ve karar hafızaya kaydedildi.")
-    
